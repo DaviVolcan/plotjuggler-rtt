@@ -23,7 +23,7 @@ The other problem is keeping host and firmware in agreement. Here the layout liv
 ```
  firmware                     J-Link software                PlotJuggler
 ┌───────────────────┐  SWD   ┌──────────────────────┐ TCP   ┌──────────────────────┐
-│ packed struct     │──────▶ │ RTT telnet server    │─────▶ │ plotjuggler-rtt      │
+│ packed struct     │──────> │ RTT telnet server    │─────> │ plotjuggler-rtt      │
 │ SEGGER_RTT_Write  │        │ localhost:19021      │       │ + telemetry_map.json │
 └───────────────────┘        └──────────────────────┘       └──────────────────────┘
 ```
@@ -125,7 +125,7 @@ The way around it is to stop streaming the fast signals live and record them in 
 ```
                    trigger (setpoint step)
                    │
- control loop  ····█████████·········································  8 kHz, 128 samples kept in RAM (16 ms)
+ control loop  ····#########·········································  8 kHz, 128 samples kept in RAM (16 ms)
  RTT link      L L L L L L L L R R R R R R R ··· R R R R L L L L L L   1 kHz, L = live record, R = replayed sample
  PlotJuggler   live data at 1 kHz, with the burst drawn back at the trigger at 8 kHz
 ```
