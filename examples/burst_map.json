@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "record_size": 20,
+  "byte_order": "little",
+  "magic": "0xC3A55A02",
+  "seq_field": "seq",
+  "nominal_rate_hz": 8000,
+  "seq_step": 8,
+  "dump_magic": "0xC3A55A82",
+  "dump_fields": ["current_a", "current_b"],
+  "fields": [
+    {"name": "seq",       "offset": 4,  "type": "uint32"},
+    {"name": "current_a", "offset": 8,  "type": "float32", "unit": "A"},
+    {"name": "current_b", "offset": 12, "type": "float32", "unit": "A"},
+    {"name": "speed_rpm", "offset": 16, "type": "float32", "unit": "rpm"}
+  ]
+}

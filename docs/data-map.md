@@ -81,9 +81,21 @@ Some data is too fast to stream live. A common pattern is to record a burst into
 - A dump record never counts as a reset, and the jump back to live data does not count as lost records.
 
 ```json
-"dump_magic": "0xC3A55A81",
+"nominal_rate_hz": 8000,
+"seq_step": 8,
+"dump_magic": "0xC3A55A82",
 "dump_fields": ["current_a", "current_b"]
 ```
+
+For the replayed samples to land at the right instant, `seq` must count the fast loop's ticks, not records: here the loop runs at 8 kHz and live records go out every 8th tick, hence `nominal_rate_hz` 8000 and `seq_step` 8. See [`examples/firmware/burst_capture.c`](../examples/firmware/burst_capture.c) and [`examples/burst_map.json`](../examples/burst_map.json) for the complete pattern.
+
+Sizing a burst:
+
+- **RAM**: samples × fields × field size. 128 samples of two `float` is 1 KiB.
+- **Replay time**: samples ÷ records per second the link carries. Replacing the live record, 128 samples take 128 ms at 1 kHz. Sending them alongside live data is fine too, as long as the link has room for both.
+- **Pre-trigger**: if the event is not known in advance, keep writing into a ring buffer and freeze it a fixed number of samples after the trigger, as the example does. If it is known (a scripted setpoint profile), start recording a few ticks before it and a plain array is enough.
+
+The target must not overwrite the buffer while it is being sent. The example freezes it until the replay ends and ignores triggers in the meantime.
 
 ## Diagnostic series
 

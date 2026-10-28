@@ -103,6 +103,26 @@ A complete version, with a `_Static_assert` that catches a struct that no longer
 
 When you change the layout, change the low byte of the magic in both places. A plugin running an old map then stays unsynced and plots nothing, instead of plotting misaligned values.
 
+## Capturing more than the link can carry
+
+The debug link has a fixed bandwidth, and fast control loops easily produce more data than it can move. A motor current loop running at 8 kHz, streamed at 1 kHz, shows one sample in eight. That is enough to watch the motor run, but not to measure how fast the loop responds to a step, which is often the point of the test.
+
+The way around it is to stop streaming the fast signals live and record them in RAM instead, only around the moment you care about, then send them afterwards at whatever rate the link allows:
+
+```
+                   trigger (setpoint step)
+                   │
+ control loop  ····█████████·········································  8 kHz, 128 samples kept in RAM (16 ms)
+ RTT link      L L L L L L L L R R R R R R R ··· R R R R L L L L L L   1 kHz, L = live record, R = replayed sample
+ PlotJuggler   live data at 1 kHz, with the burst drawn back at the trigger at 8 kHz
+```
+
+Replayed records carry a second magic word and the tick at which each sample was taken. The plugin puts every sample back at its original instant on the time axis, so the burst lines up with the live data around it. Only the fields the burst actually recorded are plotted, and the replay is neither mistaken for a target reset nor counted as lost data.
+
+What it costs is RAM and latency. RAM limits how long the window can be: 128 samples of two floats is 1 KiB. The burst also shows up after the event, not while it happens. In the thesis that motivated this plugin, the firmware kept nine windows of 128 samples (four floats each, about 18.5 kB) around the steps of a current-loop test and replayed them in about 1.2 s after the run. That was enough to measure the loop's time constant and delay, which the 1 kHz live stream could not resolve.
+
+[`examples/firmware/burst_capture.c`](examples/firmware/burst_capture.c) is a complete example with a pre-trigger ring buffer, and [`examples/burst_map.json`](examples/burst_map.json) is its data map. The keys involved (`dump_magic`, `dump_fields`, `seq_step`) are described in [`docs/data-map.md`](docs/data-map.md#burst-captures).
+
 ## Building
 
 Requirements:
@@ -137,7 +157,7 @@ If all you need is to read text from `printf`, SEGGER's RTT Viewer is simpler. I
 
 This plugin came out of my undergraduate thesis in Electrical Engineering at UCPel, Brazil: a field-oriented speed controller for a hoverboard BLDC motor, written from scratch on an STM32F405. Tuning the current and speed loops and comparing PI, PID and fuzzy controllers meant watching dozens of signals at once on the bench (phase currents, d/q currents, voltages, rotor angle, speed) and keeping every run for later analysis.
 
-That came to 36 signals in a 133-byte record at 1 kHz, plus 8 kHz captures around each speed step: about 133 kB/s, more than ten times what a UART at 115200 baud can carry. The firmware's record layout also changed many times as the project grew, so having to rebuild the plotting tool each time was not an option. The thesis bench data was captured with this plugin.
+That came to 36 signals in a 133-byte record at 1 kHz, plus 8 kHz captures around each current step: about 133 kB/s, more than ten times what a UART at 115200 baud can carry. The firmware's record layout also changed many times as the project grew, so having to rebuild the plotting tool each time was not an option. The thesis bench data was captured with this plugin.
 
 ## Status
 
