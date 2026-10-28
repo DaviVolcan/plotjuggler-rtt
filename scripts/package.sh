@@ -4,6 +4,7 @@
 #     <id>/
 #       libsegger_rtt_streamer.so
 #       manifest.json
+#       LICENSE        (MPL-2.0 text; the source is linked from manifest.json)
 # and writes the SHA256 the registry entry needs next to it.
 #
 # Usage: scripts/package.sh <build-dir> <output-dir> [os] [arch]
@@ -31,7 +32,7 @@ BIN=$(find "$BUILD" -maxdepth 2 -name "$LIB" | head -1)
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/$ID" "$OUT"
-cp "$BIN" "$ROOT/manifest.json" "$STAGE/$ID/"
+cp "$BIN" "$ROOT/manifest.json" "$ROOT/LICENSE" "$STAGE/$ID/"
 
 ZIP="$ID-$VERSION-$OS-$ARCH.zip"
 OUT=$(cd "$OUT" && pwd)

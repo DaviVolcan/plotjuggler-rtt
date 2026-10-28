@@ -1,7 +1,7 @@
 {
   "id": "segger-rtt-streamer",
   "name": "SEGGER RTT",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Live binary telemetry from a microcontroller over SEGGER RTT (J-Link), decoded with a JSON data map.",
   "author": "Davi Alexandre Volcan",
   "publisher": "Davi Alexandre Volcan",
@@ -19,6 +19,6 @@
     "telemetry",
     "stream"
   ],
-  "min_sdk_required": "0.34.0",
+  "min_sdk_required": "0.34.1",
   "min_plotjuggler_version": "4.0.0"
 }
