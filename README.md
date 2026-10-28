@@ -2,9 +2,9 @@
 
 Plot live telemetry from a microcontroller in [PlotJuggler](https://github.com/PlotJuggler/PlotJuggler), a free desktop app for exploring time series, streamed over SEGGER RTT as packed binary records. The record layout is described in a JSON file, so when your firmware's telemetry changes you edit the JSON, not the plugin.
 
-![PlotJuggler showing a speed step on a BLDC motor controller: speed, d/q currents, phase currents, PWM duty cycles, phase voltages and power](docs/images/motor-step.png)
+![PlotJuggler showing a speed step on a BLDC motor controller: speed, d/q currents, phase currents, PWM duty cycles, phase voltages and power, streaming live](docs/images/motor-step.gif)
 
-*A speed step on a BLDC motor controller (STM32F405), streamed live through the plugin. The power plot is a PlotJuggler custom series computed from the streamed fields.*
+*A speed step on a BLDC motor controller (STM32F405), streamed live through the plugin and shown at quarter speed. The power plot is a PlotJuggler custom series computed from the streamed fields.*
 
 ## Why
 
