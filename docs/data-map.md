@@ -1,6 +1,6 @@
 # Data map reference
 
-The data map is a JSON file that describes one telemetry record byte by byte. The plugin loads it when streaming starts and reports the first problem it finds (missing key, field past the end of the record, unknown type) in a dialog.
+The data map is a JSON file that describes one telemetry record byte by byte. The plugin loads it when streaming starts and refuses to start, naming the first problem it finds (missing key, field past the end of the record, unknown type).
 
 ## Example
 

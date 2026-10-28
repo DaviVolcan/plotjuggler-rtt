@@ -6,6 +6,8 @@ Plot live telemetry from a microcontroller in [PlotJuggler](https://github.com/P
 
 *A speed step on a BLDC motor controller (STM32F405), streamed live through the plugin and shown at quarter speed. The power plot is a PlotJuggler custom series computed from the streamed fields.*
 
+This is the version for **PlotJuggler 4**. For PlotJuggler 3.x, use the [`pj3` branch](https://github.com/DaviVolcan/plotjuggler-rtt/tree/pj3) (tag `v0.1.0-pj3`).
+
 ## Why
 
 Plotting signals from firmware usually means `printf` over a UART and a script that parses text. That costs CPU time on the target, needs a free serial port, and tops out at the baud rate.
@@ -28,7 +30,7 @@ The other problem is keeping host and firmware in agreement. Here the layout liv
 
 - Every record starts with the same 32-bit magic. The plugin syncs on it, skips the J-Link text banner, and drops anything that does not line up.
 - The time axis comes from a counter in the record (`seq / nominal_rate_hz`), so plots use the target's clock. USB and OS scheduling jitter on the PC do not distort them.
-- When the counter jumps back to zero (the target was reset), the plots are cleared and a new run starts.
+- When the counter jumps back to zero (the target was reset), the new run is placed one second after the previous one on the time axis, so the two never overlap.
 - Lost records and rejected records are published as `rtt/_diag/lost_records` and `rtt/_diag/malformed`, so you can plot them next to your data.
 - Optionally, every run is also written to its own CSV file.
 
@@ -38,13 +40,9 @@ The other problem is keeping host and firmware in agreement. Here the layout liv
 
 - **Drag and drop.** Every field of your record shows up in a list; drag it onto a plot. Split the window into as many plots and tabs as you need.
 - **Pause and look back.** Stop the stream at any moment, zoom into a few milliseconds, scroll back through the buffer, or replay it with the timeline at the bottom.
-- **Compute signals without reflashing.** Combine streamed fields with a one-line Lua function: the per-phase power in the plot above comes from the three terminal voltages and the phase current. Ready-made transforms cover derivative, integral, moving average, RMS, scale and offset, and outlier removal.
-- **Frequency domain.** The FFT tool shows the spectrum of any signal, handy for finding the frequency of an oscillation or noise.
-- **Keep the setup.** Save the plot arrangement as a layout file and reopen the same bench view next time with one click.
-- **Take the data elsewhere.** Export what you captured to CSV for Python, MATLAB or a spreadsheet. This plugin can also save each run to a CSV file by itself.
-- **Large captures.** It stays responsive with thousands of series and millions of points, so long runs at 1 kHz are not a problem.
-
-The [PlotJuggler tutorials](https://slides.com/davidefaconti/introduction-to-plotjuggler) cover the interface.
+- **Compute signals without reflashing.** Combine streamed fields with a one-line Lua or Python function in the Transform Editor: the per-phase power in the plot above comes from the three terminal voltages and the phase current. Ready-made filters cover derivative, integral, moving average, RMS, scale and offset, and outlier removal.
+- **Keep the setup.** Save the plot arrangement as a layout file and reopen the same bench view next time.
+- **More tools from the Marketplace.** *File → Marketplace* adds an FFT toolbox, to find the frequency of an oscillation or noise, and a data exporter, to take a capture to Python, MATLAB or a spreadsheet. This plugin can also save each run to a CSV file by itself.
 
 ## Quick start without hardware
 
@@ -53,7 +51,8 @@ The [PlotJuggler tutorials](https://slides.com/davidefaconti/introduction-to-plo
 1. Build the plugin (see [Building](#building)):
 
    ```sh
-   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+   scripts/build-sdk.sh ~/pj-sdk
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=~/pj-sdk
    cmake --build build
    ```
 
@@ -63,15 +62,15 @@ The [PlotJuggler tutorials](https://slides.com/davidefaconti/introduction-to-plo
    python3 tools/fake_target.py
    ```
 
-3. Start PlotJuggler with the plugin folder:
+3. Start PlotJuggler 4 with the plugin folder:
 
    ```sh
-   plotjuggler --plugin_folders "$PWD/build"
+   ./PlotJuggler-4.0.0-x86_64.AppImage --plugin-dir "$PWD/build"
    ```
 
-4. In *Streaming*, select **SEGGER RTT** and press *Start*. Leave host, port and channel at their defaults and pick `examples/telemetry_map.json` as the data map.
+4. Under *Sources*, open the stream tab, select **SEGGER RTT** and press **+**. Leave host, port and channel at their defaults and pick `examples/telemetry_map.json` as the data map.
 
-5. Drag `rtt/current_a` and `rtt/speed_rpm` into a plot. Every 10 seconds the fake target simulates a reset and the plots start over.
+5. Expand `[stream] SEGGER RTT` → `rtt` and drag `current_a` and `speed_rpm` into a plot. Every 10 seconds the fake target simulates a reset, and the new run appears one second after the previous one.
 
 ## Using it with your firmware
 
@@ -111,7 +110,7 @@ SEGGER_RTT_Write(1, &record, sizeof(record));
 }
 ```
 
-**3. Start a debug session** (for example J-Link GDB Server, or from your IDE) and start the plugin with your map.
+**3. Start a debug session** (for example J-Link GDB Server, or from your IDE), then start the plugin with your map. If your debug server uses another telnet port or channel, set them in the plugin's dialog; it remembers them.
 
 A complete version, with a `_Static_assert` that catches a struct that no longer matches the map, is in [`examples/firmware/telemetry.c`](examples/firmware/telemetry.c). Every key of the data map, including burst captures replayed from a buffer, is documented in [`docs/data-map.md`](docs/data-map.md).
 
@@ -141,21 +140,19 @@ What it costs is RAM and latency. RAM limits how long the window can be: 128 sam
 
 Requirements:
 
-- CMake 3.16 or newer and a C++17 compiler
-- Qt 5 (Core, Widgets, Network, Xml)
-- PlotJuggler installed **with its CMake package** (`plotjugglerConfig.cmake`). AppImage, Snap and Flatpak builds do not include it. Build PlotJuggler from source and run `cmake --install`, or use the ROS package.
-
-The plugin has to be built against the same PlotJuggler version and Qt that will load it.
+- CMake 3.22 or newer and a C++20 compiler
+- The PlotJuggler plugin SDK, in the version the target PlotJuggler release was built with: **plotjuggler_sdk 0.34.1 for PlotJuggler 4.0.0**. `scripts/build-sdk.sh` downloads and installs it, with the libraries it needs, into a folder of your choice (about a minute).
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+scripts/build-sdk.sh ~/pj-sdk                 # once
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=~/pj-sdk
 cmake --build build
-ctest --test-dir build          # unit tests; GoogleTest is downloaded if not installed
+ctest --test-dir build                        # unit tests and an end-to-end test of the built plugin
 ```
 
-If PlotJuggler is installed somewhere CMake does not search, add `-DCMAKE_PREFIX_PATH=/path/to/prefix`.
+asio, nlohmann/json and GoogleTest are downloaded at configure time when they are not installed.
 
-The result is `build/libDataStreamRTT.so`. Either start PlotJuggler with `--plugin_folders <dir>`, or add that folder under *App → Preferences → Plugins*.
+The build produces `libsegger_rtt_streamer.so` and `segger_rtt_streamer.pjmanifest.json`. Keep the two files together and start PlotJuggler 4 with `--plugin-dir` pointing at their folder.
 
 ## Limitations
 
@@ -163,7 +160,11 @@ The result is `build/libDataStreamRTT.so`. Either start PlotJuggler with `--plug
 - **One client per channel.** J-Link serves one telnet client at a time, so you cannot use RTT Viewer on the same port while the plugin is connected.
 - **Little-endian targets.** Fields are decoded with a plain copy, which matches Cortex-M and most other MCUs.
 - **Fixed-size records.** Every record has the same layout; variable-length messages are not supported.
-- **Tested on Linux with Qt 5** only. Windows, macOS and Qt 6 builds have not been tried.
+- **Tested on Linux** with PlotJuggler 4.0.0 (AppImage). Windows and macOS builds have not been tried.
+- **PlotJuggler's Record button does not record this source.** PlotJuggler 4 only records sources that hand it raw messages, and this plugin decodes records itself. Use the plugin's own CSV option instead.
+- **Load layouts after starting the stream.** A layout with custom series computed from this stream only restores once the `[stream] SEGGER RTT` dataset exists.
+- **A target reset does not clear the plots.** PlotJuggler 4 gives sources no way to do that, so each new run is placed after the previous one instead.
+- **Keep the streaming buffer short.** At 1 kHz with about 25 curves and 8 custom series on screen, PlotJuggler 4.0.0 stayed smooth with a 5 s buffer and slowed down at 15 s. Long runs are better kept in the CSV files.
 
 If all you need is to read text from `printf`, SEGGER's RTT Viewer is simpler. If the target has to stream with no debug probe attached, RTT is the wrong transport.
 
@@ -175,7 +176,7 @@ That came to 36 signals in a 133-byte record at 1 kHz, plus 8 kHz captures aroun
 
 ## Status
 
-Version 0.1. It works on the setup described above; other targets and probes have not been tested, and the data map format may still change.
+Version 0.2, for PlotJuggler 4. It works on the setup described above; other targets and probes have not been tested, and the data map format may still change.
 
 ## License
 
