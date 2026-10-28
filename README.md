@@ -1,6 +1,6 @@
 # plotjuggler-rtt
 
-Plot live telemetry from a microcontroller in [PlotJuggler](https://github.com/facontidavide/PlotJuggler), streamed over SEGGER RTT as packed binary records. The record layout is described in a JSON file, so when your firmware's telemetry changes you edit the JSON, not the plugin.
+Plot live telemetry from a microcontroller in [PlotJuggler](https://github.com/PlotJuggler/PlotJuggler), a free desktop app for exploring time series, streamed over SEGGER RTT as packed binary records. The record layout is described in a JSON file, so when your firmware's telemetry changes you edit the JSON, not the plugin.
 
 ![PlotJuggler showing a speed step on a BLDC motor controller: speed, d/q currents, phase currents, PWM duty cycles, phase voltages and power](docs/images/motor-step.png)
 
@@ -31,6 +31,20 @@ The other problem is keeping host and firmware in agreement. Here the layout liv
 - When the counter jumps back to zero (the target was reset), the plots are cleared and a new run starts.
 - Lost records and rejected records are published as `rtt/_diag/lost_records` and `rtt/_diag/malformed`, so you can plot them next to your data.
 - Optionally, every run is also written to its own CSV file.
+
+## New to PlotJuggler?
+
+[PlotJuggler](https://github.com/PlotJuggler/PlotJuggler) is an open-source (MPL-2.0) desktop application for plotting time series, used widely in robotics and drones. You do not write any plotting code: once this plugin feeds it your firmware's signals, this is what you get on the bench.
+
+- **Drag and drop.** Every field of your record shows up in a list; drag it onto a plot. Split the window into as many plots and tabs as you need.
+- **Pause and look back.** Stop the stream at any moment, zoom into a few milliseconds, scroll back through the buffer, or replay it with the timeline at the bottom.
+- **Compute signals without reflashing.** Combine streamed fields with a one-line Lua function: the per-phase power in the plot above comes from the three terminal voltages and the phase current. Ready-made transforms cover derivative, integral, moving average, RMS, scale and offset, and outlier removal.
+- **Frequency domain.** The FFT tool shows the spectrum of any signal, handy for finding the frequency of an oscillation or noise.
+- **Keep the setup.** Save the plot arrangement as a layout file and reopen the same bench view next time with one click.
+- **Take the data elsewhere.** Export what you captured to CSV for Python, MATLAB or a spreadsheet. This plugin can also save each run to a CSV file by itself.
+- **Large captures.** It stays responsive with thousands of series and millions of points, so long runs at 1 kHz are not a problem.
+
+The [PlotJuggler tutorials](https://slides.com/davidefaconti/introduction-to-plotjuggler) cover the interface.
 
 ## Quick start without hardware
 
