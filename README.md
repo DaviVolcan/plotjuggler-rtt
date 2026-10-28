@@ -168,6 +168,14 @@ The build produces `libsegger_rtt_streamer.so` and `segger_rtt_streamer.pjmanife
 
 If all you need is to read text from `printf`, SEGGER's RTT Viewer is simpler. If the target has to stream with no debug probe attached, RTT is the wrong transport.
 
+## Roadmap
+
+- **PlotJuggler Marketplace.** Publish the Linux x86_64 build so the plugin installs from *File → Marketplace*, without building anything.
+- **Windows (x64).** Add a Windows job to CI and ship a zip for the Marketplace. CMake already links the Windows socket libraries the network code needs, but the plugin has never been built on Windows; that, and a test with a J-Link there, is what is missing.
+- **macOS (Apple Silicon).** Same as Windows: a CI job, a zip, and a test on a Mac with a J-Link.
+
+If you can test on Windows or macOS, an issue with the result is very welcome.
+
 ## Background
 
 This plugin came out of my undergraduate thesis in Electrical Engineering at UCPel, Brazil: a field-oriented speed controller for a hoverboard BLDC motor, written from scratch on an STM32F405. Tuning the current and speed loops and comparing PI, PID and fuzzy controllers meant watching dozens of signals at once on the bench (phase currents, d/q currents, voltages, rotor angle, speed) and keeping every run for later analysis.
