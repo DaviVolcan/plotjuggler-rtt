@@ -341,7 +341,9 @@ TEST(PluginE2E, StreamsFromFakeJLink)
   }
   ASSERT_EQ(live.size(), 3000u);
   ASSERT_EQ(dump.size(), 16u);
-  EXPECT_EQ(diag.size(), live.size());
+  // Diagnostics at 10 Hz of target time: ~3 s of data plus the reset.
+  EXPECT_GE(diag.size(), 25u);
+  EXPECT_LE(diag.size(), 45u);
 
   // First run: target time (seq / 8000).
   EXPECT_EQ(live.front().ts, 1'000'000'000);

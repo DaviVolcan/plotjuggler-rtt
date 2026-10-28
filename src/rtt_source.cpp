@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -37,6 +38,7 @@ constexpr int kDefaultChannel = 1;   // channel 0 is usually the text terminal
 
 constexpr const char* kTopic = "rtt";
 constexpr const char* kDiagTopic = "rtt/_diag";
+constexpr PJ::Timestamp kDiagPeriodNs = 100'000'000;  // 10 Hz
 
 struct RttConfig
 {
@@ -278,6 +280,9 @@ public:
     _timeline = RunTimeline();
     _warned_disconnected = false;
     _warned_busy = false;
+    _diag_last_ts = std::numeric_limits<PJ::Timestamp>::min() / 2;
+    _diag_lost = 0;
+    _diag_malformed = 0;
     _connection = std::make_unique<RttConnection>(cfg.host, static_cast<uint16_t>(cfg.port), cfg.channel);
     return PJ::okStatus();
   }
@@ -376,13 +381,25 @@ private:
 
       if (!sample.is_dump)
       {
-        auto st = writeHost().appendRecord(
-            _diag_topic, ts,
-            { { .name = "lost_records", .value = static_cast<double>(_parser->sequenceGaps()) },
-              { .name = "malformed", .value = static_cast<double>(_parser->malformedCount()) } });
-        if (!st)
+        // The counters rarely change: a row every 100 ms of target time, or
+        // as soon as one of them moves, is enough and keeps the host from
+        // storing a second 1 kHz topic.
+        const uint64_t lost = _parser->sequenceGaps();
+        const uint64_t malformed = _parser->malformedCount();
+        const bool changed = lost != _diag_lost || malformed != _diag_malformed;
+        if (changed || ts - _diag_last_ts >= kDiagPeriodNs || ts < _diag_last_ts)
         {
-          return PJ::unexpected(st.error());
+          auto st = writeHost().appendRecord(
+              _diag_topic, ts,
+              { { .name = "lost_records", .value = static_cast<double>(lost) },
+                { .name = "malformed", .value = static_cast<double>(malformed) } });
+          if (!st)
+          {
+            return PJ::unexpected(st.error());
+          }
+          _diag_last_ts = ts;
+          _diag_lost = lost;
+          _diag_malformed = malformed;
         }
       }
     }
@@ -399,6 +416,9 @@ private:
   PJ::sdk::TopicHandle _diag_topic{};
   bool _warned_disconnected = false;
   bool _warned_busy = false;
+  PJ::Timestamp _diag_last_ts = std::numeric_limits<PJ::Timestamp>::min() / 2;
+  uint64_t _diag_lost = 0;
+  uint64_t _diag_malformed = 0;
 };
 
 }  // namespace
