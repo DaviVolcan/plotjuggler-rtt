@@ -133,9 +133,15 @@ The result is `build/libDataStreamRTT.so`. Either start PlotJuggler with `--plug
 
 If all you need is to read text from `printf`, SEGGER's RTT Viewer is simpler. If the target has to stream with no debug probe attached, RTT is the wrong transport.
 
+## Background
+
+This plugin came out of my undergraduate thesis in Electrical Engineering at UCPel, Brazil: a field-oriented speed controller for a hoverboard BLDC motor, written from scratch on an STM32F405. Tuning the current and speed loops and comparing PI, PID and fuzzy controllers meant watching dozens of signals at once on the bench (phase currents, d/q currents, voltages, rotor angle, speed) and keeping every run for later analysis.
+
+That came to 36 signals in a 133-byte record at 1 kHz, plus 8 kHz captures around each speed step: about 133 kB/s, more than ten times what a UART at 115200 baud can carry. The firmware's record layout also changed many times as the project grew, so having to rebuild the plotting tool each time was not an option. The thesis bench data was captured with this plugin.
+
 ## Status
 
-Version 0.1. Developed for, and used daily on, an STM32F405 motor controller that streams 133-byte records at 1 kHz together with 8 kHz burst captures. It works for that use. Other targets and probes have not been tested, and the data map format may still change.
+Version 0.1. It works on the setup described above; other targets and probes have not been tested, and the data map format may still change.
 
 ## License
 
