@@ -1,0 +1,142 @@
+# plotjuggler-rtt
+
+Plot live telemetry from a microcontroller in [PlotJuggler](https://github.com/facontidavide/PlotJuggler), streamed over SEGGER RTT as packed binary records. The record layout is described in a JSON file, so when your firmware's telemetry changes you edit the JSON, not the plugin.
+
+![PlotJuggler showing a speed step on a BLDC motor controller: speed, d/q currents, phase currents, PWM duty cycles, phase voltages and power](docs/images/motor-step.png)
+
+*A speed step on a BLDC motor controller (STM32F405), streamed live through the plugin. The power plot is a PlotJuggler custom series computed from the streamed fields.*
+
+## Why
+
+Plotting signals from firmware usually means `printf` over a UART and a script that parses text. That costs CPU time on the target, needs a free serial port, and tops out at the baud rate.
+
+[RTT](https://kb.segger.com/RTT) (Real-Time Transfer) is SEGGER's alternative: the firmware writes into a ring buffer in RAM and the J-Link probe reads that memory in the background through the debug port, without halting the CPU. No extra pins, no baud rate, and writing a record costs about as much as a `memcpy`. If you already debug with a J-Link, you already have it.
+
+What RTT does not give you is framing. It is a plain byte stream, and the host almost never connects at the start of a record. A reader that assumes it does will decode shifted bytes into numbers that look plausible and are wrong. This plugin finds record boundaries with a 4-byte magic word, checks it on every record, and resynchronises on its own if bytes go missing.
+
+The other problem is keeping host and firmware in agreement. Here the layout lives in a JSON *data map* that you keep next to your firmware. Adding a field to the record means adding a line to the JSON. The plugin is never rebuilt.
+
+## How it works
+
+```
+ firmware                     J-Link software                PlotJuggler
+┌───────────────────┐  SWD   ┌──────────────────────┐ TCP   ┌──────────────────────┐
+│ packed struct     │──────▶ │ RTT telnet server    │─────▶ │ plotjuggler-rtt      │
+│ SEGGER_RTT_Write  │        │ localhost:19021      │       │ + telemetry_map.json │
+└───────────────────┘        └──────────────────────┘       └──────────────────────┘
+```
+
+- Every record starts with the same 32-bit magic. The plugin syncs on it, skips the J-Link text banner, and drops anything that does not line up.
+- The time axis comes from a counter in the record (`seq / nominal_rate_hz`), so plots use the target's clock. USB and OS scheduling jitter on the PC do not distort them.
+- When the counter jumps back to zero (the target was reset), the plots are cleared and a new run starts.
+- Lost records and rejected records are published as `rtt/_diag/lost_records` and `rtt/_diag/malformed`, so you can plot them next to your data.
+- Optionally, every run is also written to its own CSV file.
+
+## Quick start without hardware
+
+`tools/fake_target.py` pretends to be a J-Link and streams the record from `examples/` at 1 kHz. It is the fastest way to see the plugin work.
+
+1. Build the plugin (see [Building](#building)):
+
+   ```sh
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+   cmake --build build
+   ```
+
+2. Start the fake target:
+
+   ```sh
+   python3 tools/fake_target.py
+   ```
+
+3. Start PlotJuggler with the plugin folder:
+
+   ```sh
+   plotjuggler --plugin_folders "$PWD/build"
+   ```
+
+4. In *Streaming*, select **SEGGER RTT** and press *Start*. Leave host, port and channel at their defaults and pick `examples/telemetry_map.json` as the data map.
+
+5. Drag `rtt/current_a` and `rtt/speed_rpm` into a plot. Every 10 seconds the fake target simulates a reset and the plots start over.
+
+## Using it with your firmware
+
+**1. Send a packed record on an RTT up-channel.** The first field is the magic; one field must be a counter that goes up by one per record.
+
+```c
+#define TELEMETRY_MAGIC 0xC3A55A01u  /* low byte: bump when the layout changes */
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;      /* offset 0 */
+    uint32_t seq;        /* offset 4 */
+    float    current_a;  /* offset 8 */
+    float    speed_rpm;  /* offset 12 */
+} telemetry_record_t;
+
+SEGGER_RTT_ConfigUpBuffer(1, "Telemetry", buffer, sizeof(buffer),
+                          SEGGER_RTT_MODE_NO_BLOCK_SKIP);
+/* then, at a fixed rate: */
+SEGGER_RTT_Write(1, &record, sizeof(record));
+```
+
+`SEGGER_RTT_MODE_NO_BLOCK_SKIP` drops a whole record when the buffer is full. A slow host then never stalls your control loop and never receives half a record.
+
+**2. Describe the same record in JSON:**
+
+```json
+{
+  "record_size": 16,
+  "magic": "0xC3A55A01",
+  "seq_field": "seq",
+  "nominal_rate_hz": 1000,
+  "fields": [
+    {"name": "seq",       "offset": 4,  "type": "uint32"},
+    {"name": "current_a", "offset": 8,  "type": "float32", "unit": "A"},
+    {"name": "speed_rpm", "offset": 12, "type": "float32", "unit": "rpm"}
+  ]
+}
+```
+
+**3. Start a debug session** (for example J-Link GDB Server, or from your IDE) and start the plugin with your map.
+
+A complete version, with a `_Static_assert` that catches a struct that no longer matches the map, is in [`examples/firmware/telemetry.c`](examples/firmware/telemetry.c). Every key of the data map, including burst captures replayed from a buffer, is documented in [`docs/data-map.md`](docs/data-map.md).
+
+When you change the layout, change the low byte of the magic in both places. A plugin running an old map then stays unsynced and plots nothing, instead of plotting misaligned values.
+
+## Building
+
+Requirements:
+
+- CMake 3.16 or newer and a C++17 compiler
+- Qt 5 (Core, Widgets, Network, Xml)
+- PlotJuggler installed **with its CMake package** (`plotjugglerConfig.cmake`). AppImage, Snap and Flatpak builds do not include it. Build PlotJuggler from source and run `cmake --install`, or use the ROS package.
+
+The plugin has to be built against the same PlotJuggler version and Qt that will load it.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build          # unit tests; GoogleTest is downloaded if not installed
+```
+
+If PlotJuggler is installed somewhere CMake does not search, add `-DCMAKE_PREFIX_PATH=/path/to/prefix`.
+
+The result is `build/libDataStreamRTT.so`. Either start PlotJuggler with `--plugin_folders <dir>`, or add that folder under *App → Preferences → Plugins*.
+
+## Limitations
+
+- **J-Link only.** The plugin talks to the RTT telnet server of SEGGER's J-Link software and has been used with J-Link GDB Server. OpenOCD and probe-rs also expose RTT over TCP but have not been tried.
+- **One client per channel.** J-Link serves one telnet client at a time, so you cannot use RTT Viewer on the same port while the plugin is connected.
+- **Little-endian targets.** Fields are decoded with a plain copy, which matches Cortex-M and most other MCUs.
+- **Fixed-size records.** Every record has the same layout; variable-length messages are not supported.
+- **Tested on Linux with Qt 5** only. Windows, macOS and Qt 6 builds have not been tried.
+
+If all you need is to read text from `printf`, SEGGER's RTT Viewer is simpler. If the target has to stream with no debug probe attached, RTT is the wrong transport.
+
+## Status
+
+Version 0.1. Developed for, and used daily on, an STM32F405 motor controller that streams 133-byte records at 1 kHz together with 8 kHz burst captures. It works for that use. Other targets and probes have not been tested, and the data map format may still change.
+
+## License
+
+[Mozilla Public License 2.0](LICENSE), the same license as PlotJuggler.

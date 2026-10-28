@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "record_size": 23,
+  "byte_order": "little",
+  "magic": "0xC3A55A01",
+  "seq_field": "seq",
+  "nominal_rate_hz": 1000,
+  "fields": [
+    {"name": "seq",       "offset": 4,  "type": "uint32"},
+    {"name": "current_a", "offset": 8,  "type": "float32", "unit": "A"},
+    {"name": "current_b", "offset": 12, "type": "float32", "unit": "A"},
+    {"name": "speed_rpm", "offset": 16, "type": "float32", "unit": "rpm"},
+    {"name": "temp_cdeg", "offset": 20, "type": "int16",   "unit": "0.01 degC"},
+    {"name": "state",     "offset": 22, "type": "uint8"}
+  ]
+}
