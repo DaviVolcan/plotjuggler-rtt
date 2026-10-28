@@ -84,7 +84,7 @@ bool BinaryParser::decodeRecord(const uint8_t* record, bool is_dump, TelemetrySa
   {
     // A dump record carries a seq from the past. It must not look like a
     // reset, and the jump back to live data must not count as a gap.
-    _after_dump = true;
+    _skip_next_gap = true;
     return true;
   }
 
@@ -93,7 +93,7 @@ bool BinaryParser::decodeRecord(const uint8_t* record, bool is_dump, TelemetrySa
   {
     out.target_reset = true;
   }
-  else if (_last_seq >= 0 && !_after_dump && seq > _last_seq)
+  else if (_last_seq >= 0 && !_skip_next_gap && seq > _last_seq)
   {
     const int64_t step = _map.seq_step;
     const int64_t delta = seq - _last_seq;
@@ -105,7 +105,7 @@ bool BinaryParser::decodeRecord(const uint8_t* record, bool is_dump, TelemetrySa
       _seq_gaps += static_cast<uint64_t>((delta + step / 2) / step - 1);
     }
   }
-  _after_dump = false;
+  _skip_next_gap = false;
   _last_seq = seq;
   return true;
 }
@@ -154,6 +154,16 @@ size_t BinaryParser::findSync() const
     return pos;
   }
   return std::string::npos;
+}
+
+void BinaryParser::resync()
+{
+  _buffer.clear();
+  _synced = false;
+  // The first record after reconnecting may legitimately be far ahead of
+  // the last one (J-Link drops data while nobody is connected); that jump
+  // is not a gap in this connection.
+  _skip_next_gap = true;
 }
 
 std::vector<TelemetrySample> BinaryParser::feed(const char* data, size_t len)

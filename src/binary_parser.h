@@ -23,6 +23,11 @@ public:
 
   std::vector<TelemetrySample> feed(const char* data, size_t len);
 
+  // Call when the connection is re-established: drops buffered bytes and
+  // the current sync, but remembers the last sequence number so that a
+  // target reset that happened while disconnected is still detected.
+  void resync();
+
   // Records rejected after framing (bad magic mid-stream, NaN/Inf float).
   uint64_t malformedCount() const
   {
@@ -65,7 +70,7 @@ private:
   RttDataMap _map;
   std::string _buffer;
   int64_t _last_seq = -1;
-  bool _after_dump = false;
+  bool _skip_next_gap = false;
   uint64_t _malformed = 0;
   uint64_t _seq_gaps = 0;
   uint64_t _discarded = 0;

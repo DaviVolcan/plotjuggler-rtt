@@ -1,0 +1,24 @@
+{
+  "id": "segger-rtt-streamer",
+  "name": "SEGGER RTT",
+  "version": "0.2.0",
+  "description": "Live binary telemetry from a microcontroller over SEGGER RTT (J-Link), decoded with a JSON data map.",
+  "author": "Davi Alexandre Volcan",
+  "publisher": "Davi Alexandre Volcan",
+  "website": "https://github.com/DaviVolcan/plotjuggler-rtt",
+  "repository": "https://github.com/DaviVolcan/plotjuggler-rtt",
+  "license": "MPL-2.0",
+  "icon_url": "",
+  "category": "data_stream",
+  "tags": [
+    "rtt",
+    "segger",
+    "jlink",
+    "embedded",
+    "microcontroller",
+    "telemetry",
+    "stream"
+  ],
+  "min_sdk_required": "0.34.0",
+  "min_plotjuggler_version": "4.0.0"
+}

@@ -7,16 +7,15 @@
 #include "rtt_data_map.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 
-#include <QByteArray>
-#include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
-#include <QJsonValue>
-#include <QString>
+#include <nlohmann/json.hpp>
+
+using nlohmann::json;
 
 namespace
 {
@@ -29,19 +28,31 @@ constexpr size_t kMagicSize = sizeof(uint32_t);
 
 // Accepts a string ("0xC3A55A01", any base understood by strtoull with
 // base 0) or a JSON number.
-uint32_t parseU32(const QJsonValue& value, const char* key)
+uint32_t parseU32(const json& value, const char* key)
 {
+  unsigned long long parsed = 0;
   bool ok = false;
-  quint64 parsed = 0;
-  if (value.isString())
+  if (value.is_string())
   {
-    parsed = value.toString().toULongLong(&ok, 0);
+    const std::string text = value.get<std::string>();
+    if (!text.empty() && text[0] != '-')
+    {
+      char* end = nullptr;
+      errno = 0;
+      parsed = std::strtoull(text.c_str(), &end, 0);
+      ok = errno == 0 && end != nullptr && *end == '\0';
+    }
   }
-  else if (value.isDouble())
+  else if (value.is_number_unsigned())
   {
-    const double as_double = value.toDouble();
-    ok = as_double >= 0.0 && as_double <= 4294967295.0;
-    parsed = static_cast<quint64>(as_double);
+    parsed = value.get<unsigned long long>();
+    ok = true;
+  }
+  else if (value.is_number_integer())
+  {
+    const long long v = value.get<long long>();
+    ok = v >= 0;
+    parsed = static_cast<unsigned long long>(v);
   }
   if (!ok || parsed > 0xFFFFFFFFull)
   {
@@ -50,10 +61,38 @@ uint32_t parseU32(const QJsonValue& value, const char* key)
   return static_cast<uint32_t>(parsed);
 }
 
+// JSON integer, or a float with no fractional part (some tools write 8.0).
+long long intValue(const json& value, const char* key)
+{
+  if (value.is_number_integer())
+  {
+    return value.get<long long>();
+  }
+  if (value.is_number_float())
+  {
+    const double d = value.get<double>();
+    if (d == static_cast<double>(static_cast<long long>(d)))
+    {
+      return static_cast<long long>(d);
+    }
+  }
+  fail(std::string("'") + key + "' must be an integer");
+}
+
 bool hasField(const std::vector<RttFieldDef>& fields, const std::string& name)
 {
   return std::any_of(fields.begin(), fields.end(),
                      [&](const RttFieldDef& f) { return f.name == name; });
+}
+
+std::string stringValue(const json& obj, const char* key)
+{
+  const json& v = obj.at(key);
+  if (!v.is_string())
+  {
+    fail(std::string("'") + key + "' must be a string");
+  }
+  return v.get<std::string>();
 }
 }  // namespace
 
@@ -100,14 +139,19 @@ RttFieldType RttDataMap::parseType(const std::string& name)
 
 RttDataMap RttDataMap::loadFromJsonText(const std::string& json_text)
 {
-  QJsonParseError parse_error;
-  const QJsonDocument doc =
-      QJsonDocument::fromJson(QByteArray::fromStdString(json_text), &parse_error);
-  if (parse_error.error != QJsonParseError::NoError || !doc.isObject())
+  json root;
+  try
   {
-    fail("invalid JSON (" + parse_error.errorString().toStdString() + ")");
+    root = json::parse(json_text);
   }
-  const QJsonObject root = doc.object();
+  catch (const json::parse_error& e)
+  {
+    fail(std::string("invalid JSON (") + e.what() + ")");
+  }
+  if (!root.is_object())
+  {
+    fail("invalid JSON (top level must be an object)");
+  }
 
   for (const char* key : { "record_size", "magic", "seq_field", "fields" })
   {
@@ -119,37 +163,55 @@ RttDataMap RttDataMap::loadFromJsonText(const std::string& json_text)
 
   // Fields are decoded with a plain memcpy, so the target must be
   // little-endian, like every Cortex-M.
-  if (root.contains("byte_order") && root.value("byte_order").toString() != "little")
+  if (root.contains("byte_order") &&
+      (!root["byte_order"].is_string() || root["byte_order"].get<std::string>() != "little"))
   {
     fail("only \"byte_order\": \"little\" is supported");
   }
 
   RttDataMap map;
-  const int record_size = root.value("record_size").toInt();
-  if (record_size <= static_cast<int>(kMagicSize))
+  const long long record_size = intValue(root["record_size"], "record_size");
+  if (record_size <= static_cast<long long>(kMagicSize))
   {
     fail("'record_size' must be larger than the 4-byte magic");
   }
   map.record_size = static_cast<size_t>(record_size);
-  map.magic = parseU32(root.value("magic"), "magic");
-  map.seq_field = root.value("seq_field").toString().toStdString();
-  map.nominal_rate_hz = root.value("nominal_rate_hz").toDouble(1000.0);
+  map.magic = parseU32(root["magic"], "magic");
+  map.seq_field = stringValue(root, "seq_field");
+
+  if (root.contains("nominal_rate_hz"))
+  {
+    if (!root["nominal_rate_hz"].is_number())
+    {
+      fail("'nominal_rate_hz' must be a number");
+    }
+    map.nominal_rate_hz = root["nominal_rate_hz"].get<double>();
+  }
   if (map.nominal_rate_hz <= 0.0)
   {
     fail("'nominal_rate_hz' must be positive");
   }
-  map.version = root.value("version").toInt(0);
+  if (root.contains("version"))
+  {
+    map.version = static_cast<int>(intValue(root["version"], "version"));
+  }
 
-  map.seq_step = static_cast<int64_t>(root.value("seq_step").toDouble(1.0));
+  if (root.contains("seq_step"))
+  {
+    map.seq_step = intValue(root["seq_step"], "seq_step");
+  }
   if (map.seq_step < 1)
   {
     fail("'seq_step' must be >= 1");
   }
-  map.reset_below_seq = static_cast<int64_t>(root.value("reset_below_seq").toDouble(-1.0));
+  if (root.contains("reset_below_seq"))
+  {
+    map.reset_below_seq = intValue(root["reset_below_seq"], "reset_below_seq");
+  }
 
   if (root.contains("dump_magic"))
   {
-    map.dump_magic = parseU32(root.value("dump_magic"), "dump_magic");
+    map.dump_magic = parseU32(root["dump_magic"], "dump_magic");
     map.has_dump_magic = true;
     if (map.dump_magic == map.magic)
     {
@@ -157,27 +219,30 @@ RttDataMap RttDataMap::loadFromJsonText(const std::string& json_text)
     }
   }
 
-  if (!root.value("fields").isArray())
+  if (!root["fields"].is_array())
   {
     fail("'fields' must be an array");
   }
-  for (const QJsonValue& field_value : root.value("fields").toArray())
+  for (const json& obj : root["fields"])
   {
-    const QJsonObject obj = field_value.toObject();
-    if (!obj.contains("name") || !obj.contains("offset") || !obj.contains("type"))
+    if (!obj.is_object() || !obj.contains("name") || !obj.contains("offset") ||
+        !obj.contains("type"))
     {
       fail("every field needs 'name', 'offset' and 'type'");
     }
     RttFieldDef field;
-    field.name = obj.value("name").toString().toStdString();
-    const int offset = obj.value("offset").toInt(-1);
-    if (offset < static_cast<int>(kMagicSize))
+    field.name = stringValue(obj, "name");
+    const long long offset = obj["offset"].is_number_integer() ? obj["offset"].get<long long>() : -1;
+    if (offset < static_cast<long long>(kMagicSize))
     {
       fail("field '" + field.name + "' must start at offset 4 or later (0-3 hold the magic)");
     }
     field.offset = static_cast<size_t>(offset);
-    field.type = parseType(obj.value("type").toString().toStdString());
-    field.unit = obj.value("unit").toString().toStdString();
+    field.type = parseType(stringValue(obj, "type"));
+    if (obj.contains("unit") && obj["unit"].is_string())
+    {
+      field.unit = obj["unit"].get<std::string>();
+    }
 
     if (field.offset + typeSize(field.type) > map.record_size)
     {
@@ -197,13 +262,13 @@ RttDataMap RttDataMap::loadFromJsonText(const std::string& json_text)
 
   if (root.contains("dump_fields"))
   {
-    if (!root.value("dump_fields").isArray())
+    if (!root["dump_fields"].is_array())
     {
       fail("'dump_fields' must be an array");
     }
-    for (const QJsonValue& v : root.value("dump_fields").toArray())
+    for (const json& v : root["dump_fields"])
     {
-      const std::string name = v.toString().toStdString();
+      const std::string name = v.is_string() ? v.get<std::string>() : std::string();
       if (!hasField(map.fields, name))
       {
         fail("dump field '" + name + "' is not one of the fields");
@@ -217,10 +282,12 @@ RttDataMap RttDataMap::loadFromJsonText(const std::string& json_text)
 
 RttDataMap RttDataMap::loadFromFile(const std::string& path)
 {
-  QFile file(QString::fromStdString(path));
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+  std::ifstream file(path);
+  if (!file)
   {
     fail("cannot open '" + path + "'");
   }
-  return loadFromJsonText(file.readAll().toStdString());
+  std::stringstream content;
+  content << file.rdbuf();
+  return loadFromJsonText(content.str());
 }

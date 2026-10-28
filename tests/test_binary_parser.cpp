@@ -358,3 +358,33 @@ TEST(BinaryParser, HoldsNewestRecordUntilNextMagic)
   ASSERT_EQ(samples.size(), 1u);
   EXPECT_EQ(samples[0].values[0].second, 2.0);
 }
+
+// After a reconnect the parser starts looking for sync again but still
+// knows the last sequence number, so a reset that happened while
+// disconnected is detected.
+TEST(BinaryParser, ResyncKeepsLastSeqForResetDetection)
+{
+  BinaryParser parser(basicMap());
+  const std::string before = packStream(500, 3) + next();
+  parser.feed(before.data(), before.size());
+  parser.resync();
+  // half a record of junk, then a fresh boot
+  const std::string after = std::string("xxxxxxx") + packStream(0, 2) + next();
+  const auto samples = parser.feed(after.data(), after.size());
+  ASSERT_EQ(samples.size(), 2u);
+  EXPECT_TRUE(samples[0].target_reset);
+  EXPECT_EQ(parser.sequenceGaps(), 0u);
+}
+
+// Data J-Link dropped while nobody was connected is not counted as lost in
+// this connection.
+TEST(BinaryParser, ResyncDoesNotCountJumpAcrossReconnectAsGap)
+{
+  BinaryParser parser(basicMap());
+  const std::string before = packStream(1, 3) + next();
+  parser.feed(before.data(), before.size());
+  parser.resync();
+  const std::string after = packStream(9000, 3) + next();
+  parser.feed(after.data(), after.size());
+  EXPECT_EQ(parser.sequenceGaps(), 0u);
+}
